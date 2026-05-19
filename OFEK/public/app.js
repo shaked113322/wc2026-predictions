@@ -183,12 +183,29 @@ const App = {
     if (tab === 'admin')       this.loadAdmin();
   },
 
-  // ── Polling ────────────────────────────────────────────────────────────────
+  // ── Polling + auto-sync ────────────────────────────────────────────────────
   startPolling() {
+    // Sync scores from ESPN on load and every 5 minutes
+    this.syncData();
+    setInterval(() => this.syncData(), 5 * 60 * 1000);
+
+    // Refresh UI every 30 seconds
     setInterval(() => {
       if (State.activeTab === 'markets')     this.loadMarkets();
       if (State.activeTab === 'leaderboard') this.loadLeaderboard();
     }, 30000);
+  },
+
+  async syncData() {
+    try {
+      const data = await fetch('/api/sync').then(r => r.json());
+      if (data.updated > 0) {
+        // New results came in — refresh immediately
+        await this.loadMarkets();
+        this.refreshPoints();
+        if (State.activeTab === 'leaderboard') this.loadLeaderboard();
+      }
+    } catch (_) { /* silent fail */ }
   },
 
   // ── MARKETS ────────────────────────────────────────────────────────────────

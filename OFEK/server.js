@@ -19,6 +19,22 @@ function getSQL() {
   return neon(url);
 }
 
+// ── ESPN team abbreviation → our team names ───────────────────────────────────
+const ESPN_MAP = {
+  MEX:'Mexico', ZAF:'South Africa', RSA:'South Africa', KOR:'South Korea',
+  CZE:'Czechia', CAN:'Canada', BIH:'Bosnia-Herz.', QAT:'Qatar',
+  SUI:'Switzerland', SWI:'Switzerland', BRA:'Brazil', MAR:'Morocco',
+  HTI:'Haiti', SCO:'Scotland', USA:'USA', PAR:'Paraguay', AUS:'Australia',
+  TUR:'Türkiye', GER:'Germany', GBR:'Germany', CUW:'Curaçao', CIV:'Ivory Coast',
+  ECU:'Ecuador', NED:'Netherlands', JPN:'Japan', SWE:'Sweden', TUN:'Tunisia',
+  BEL:'Belgium', EGY:'Egypt', IRN:'Iran', NZL:'New Zealand', ESP:'Spain',
+  CPV:'Cape Verde', KSA:'Saudi Arabia', SAU:'Saudi Arabia', URU:'Uruguay',
+  FRA:'France', SEN:'Senegal', IRQ:'Iraq', NOR:'Norway', ARG:'Argentina',
+  ALG:'Algeria', AUT:'Austria', JOR:'Jordan', POR:'Portugal', COD:'DR Congo',
+  UZB:'Uzbekistan', COL:'Colombia', ENG:'England', CRO:'Croatia',
+  GHA:'Ghana', PAN:'Panama',
+};
+
 // ── Setup tables + seed (runs once per cold start, idempotent) ────────────────
 let initialized = false;
 async function ensureInit() {
@@ -56,6 +72,12 @@ async function ensureInit() {
       score1     INTEGER,
       score2     INTEGER,
       points     INTEGER NOT NULL DEFAULT 0
+    )`;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS meta (
+      key   TEXT PRIMARY KEY,
+      value TEXT
     )`;
 
   // Seed matches only if table is empty
@@ -371,6 +393,84 @@ app.post('/api/results', async (req, res) => {
 
 app.get('/api/admin-check', (req, res) => {
   res.json({ valid: req.query.key === ADMIN_KEY });
+});
+
+// ── Auto-sync from ESPN (no API key needed) ───────────────────────────────────
+app.get('/api/sync', async (req, res) => {
+  try {
+    const sql = getSQL();
+
+    // Rate-limit: skip if synced within last 5 minutes
+    const metaRows = await sql`SELECT value FROM meta WHERE key = 'last_sync'`;
+    const lastSync = metaRows.length ? new Date(metaRows[0].value) : null;
+    const now = new Date();
+    if (lastSync && (now - lastSync) < 5 * 60 * 1000) {
+      return res.json({ ok: true, skipped: true, nextSync: new Date(lastSync.getTime() + 5*60*1000) });
+    }
+
+    // Fetch today + yesterday from ESPN (covers matches finishing around midnight)
+    const dates = [0, -1, 1].map(offset => {
+      const d = new Date(now);
+      d.setDate(d.getDate() + offset);
+      return d.toISOString().slice(0, 10).replace(/-/g, '');
+    });
+
+    let totalUpdated = 0;
+    for (const dateStr of dates) {
+      try {
+        const url = `https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=${dateStr}`;
+        const resp = await fetch(url, { headers: { 'User-Agent': 'WC2026Predictions/1.0' } });
+        if (!resp.ok) continue;
+        const data = await resp.json();
+
+        for (const event of (data.events || [])) {
+          const comp = event.competitions?.[0];
+          if (!comp) continue;
+          const status = comp.status?.type;
+          if (!status?.completed) continue;
+
+          const home = comp.competitors.find(c => c.homeAway === 'home');
+          const away = comp.competitors.find(c => c.homeAway === 'away');
+          if (!home || !away) continue;
+
+          const score1 = parseInt(home.score);
+          const score2 = parseInt(away.score);
+          if (isNaN(score1) || isNaN(score2)) continue;
+
+          const team1 = ESPN_MAP[home.team.abbreviation] || home.team.displayName;
+          const team2 = ESPN_MAP[away.team.abbreviation] || away.team.displayName;
+
+          const matchDate = event.date?.slice(0, 10);
+          const rows = await sql`
+            SELECT * FROM matches
+            WHERE team1 = ${team1} AND team2 = ${team2}
+              AND (match_date = ${matchDate} OR match_date = ${dateStr.slice(0,4)+'-'+dateStr.slice(4,6)+'-'+dateStr.slice(6,8)})
+              AND completed = false`;
+
+          if (!rows.length) continue;
+          const match = rows[0];
+
+          await sql`UPDATE matches SET score1=${score1}, score2=${score2}, completed=true WHERE id=${match.id}`;
+
+          const preds = await sql`SELECT * FROM predictions WHERE match_id = ${match.id}`;
+          for (const p of preds) {
+            let pts = 0;
+            if (p.score1 === score1 && p.score2 === score2) pts = 3;
+            else if (Math.sign(score1 - score2) === Math.sign(p.score1 - p.score2)) pts = 1;
+            await sql`UPDATE predictions SET points=${pts} WHERE id=${p.id}`;
+          }
+          totalUpdated++;
+        }
+      } catch (_) { /* skip failed date fetch */ }
+    }
+
+    await sql`INSERT INTO meta (key, value) VALUES ('last_sync', ${now.toISOString()})
+              ON CONFLICT (key) DO UPDATE SET value = ${now.toISOString()}`;
+
+    res.json({ ok: true, updated: totalUpdated, syncedAt: now });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
 });
 
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
