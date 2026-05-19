@@ -22,8 +22,8 @@
   --radius-sm:8px;
 }
 html { font-size: 15px; -webkit-font-smoothing: antialiased; }
-body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; direction: ltr; }
-button { cursor: pointer; font-family: inherit; }
+body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; direction: ltr; overflow-x: hidden; }
+button { cursor: pointer; font-family: inherit; border: none; }
 input  { font-family: inherit; }
 
 .screen { display: none; }
@@ -482,7 +482,7 @@ input  { font-family: inherit; }
   border-radius: 2px;
   margin: 12px auto 0;
 }
-.drawer-inner { padding: 16px 20px 28px; }
+.drawer-inner { padding: 16px 20px calc(28px + env(safe-area-inset-bottom)); }
 .drawer-match { text-align: center; margin-bottom: 20px; }
 .drawer-match .dm-label { font-size: .78rem; color: var(--muted); margin-bottom: 6px; }
 .drawer-match .dm-teams { font-size: 1.1rem; font-weight: 700; }
@@ -841,11 +841,117 @@ input  { font-family: inherit; }
 }
 .enter-result-btn:hover { background: rgba(255,184,77,.2); }
 
-/* ── Responsive ─────────────────────────────────────────────────── */
-@media (max-width: 480px) {
-  .market-teams, .card-teams { gap: 4px; }
-  .mname, .team-name  { font-size: .82rem; }
-  .mflag, .team-flag  { font-size: 1.2rem; }
-  .groups-grid { grid-template-columns: 1fr; }
-  .topbar-logo { font-size: .85rem; }
+/* ── Mobile — touch & global ─────────────────────────────────────── */
+button, a { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+html { -webkit-text-size-adjust: 100%; }
+
+/* ── Mobile — main layout ────────────────────────────────────────── */
+@media (max-width: 600px) {
+  #main-content { padding: 12px 8px 100px; }
+
+  /* Topbar */
+  .topbar { padding: 0 10px; height: 48px; }
+  .topbar-logo { font-size: .88rem; }
+  .user-pill { padding: 4px 8px 4px 4px; font-size: .78rem; gap: 5px; }
+  .user-avatar { width: 20px; height: 20px; font-size: .6rem; }
+  .pts-pill { padding: 3px 8px; font-size: .75rem; }
+  .icon-btn { padding: 5px 8px; font-size: .82rem; }
+
+  /* Tab nav */
+  .tab-nav { padding: 8px 8px 0; gap: 0; }
+  .tab { padding: 7px 11px; font-size: .8rem; }
+
+  /* Filter bar */
+  .filter-bar { gap: 5px; margin-bottom: 12px; }
+  .f-pill { padding: 5px 11px; font-size: .75rem; }
+
+  /* Market cards */
+  .market-card { padding: 13px 12px; margin-bottom: 6px; border-radius: 12px; }
+  .market-header { margin-bottom: 10px; }
+  .market-stage { font-size: .65rem; padding: 2px 7px; }
+  .market-time { font-size: .7rem; }
+  .market-teams { gap: 4px; margin-bottom: 12px; }
+  .mflag { font-size: 1.2rem; }
+  .mname { font-size: .82rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .market-team { min-width: 0; gap: 5px; }
+  .market-result { font-size: 1.1rem; padding: 0 4px; }
+
+  /* Outcome buttons — bigger tap targets */
+  .out-btn { padding: 11px 4px; border-radius: 9px; min-height: 54px; }
+  .out-btn .out-pct { font-size: .88rem; }
+  .out-btn .out-label { font-size: .66rem; }
+  .outcome-row { gap: 5px; }
+  .dist-bar { height: 4px; margin-bottom: 8px; }
+
+  /* Prediction badges */
+  .pred-badge { font-size: .72rem; padding: 5px 9px; }
+
+  /* Date divider */
+  .date-divider { padding: 14px 2px 6px; font-size: .68rem; }
+
+  /* Leaderboard */
+  .lb-header { margin-bottom: 12px; }
+  .lb-header h2 { font-size: 1.1rem; }
+  .lb-row { padding: 11px 12px; gap: 10px; border-radius: 12px; }
+  .lb-avatar { width: 30px; height: 30px; font-size: .7rem; }
+  .lb-name { font-size: .88rem; }
+  .lb-detail { font-size: .68rem; }
+  .lb-pts { font-size: 1.15rem; }
+
+  /* My bets */
+  .mybet-card { padding: 12px; border-radius: 12px; }
+  .mybet-teams { font-size: .82rem; }
+  .pick-score { font-size: .9rem; }
+
+  /* Groups */
+  .groups-grid { grid-template-columns: 1fr; gap: 8px; }
+  .group-card { border-radius: 12px; }
+  .group-title { padding: 10px 12px; font-size: .9rem; }
+  .group-table { font-size: .78rem; }
+  .group-table th { padding: 4px 6px; font-size: .6rem; }
+  .group-table td { padding: 7px 6px; }
+  .group-table td:first-child { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Admin cards */
+  .admin-card { padding: 12px; border-radius: 12px; }
+  .admin-match { font-size: .85rem; }
+  .enter-result-btn { padding: 8px 12px; font-size: .78rem; }
+
+  /* Score stepper in drawer — bigger tap area */
+  .score-stepper button { width: 44px; height: 50px; font-size: 1.3rem; }
+  .score-stepper span { min-width: 54px; height: 50px; font-size: 1.5rem; }
+  .score-team-name { font-size: .75rem; }
+  .score-colon { font-size: 1.4rem; }
+
+  /* Submit button */
+  .submit-btn { padding: 16px; font-size: .95rem; border-radius: 12px; }
+
+  /* Drawer */
+  .drawer { border-radius: 18px 18px 0 0; }
+  .drawer-inner { padding: 14px 16px 32px; }
+  .drawer-match { margin-bottom: 16px; }
+  .drawer-teams { font-size: .95rem; }
+
+  /* Admin modal — full width on mobile */
+  .modal-card {
+    width: calc(100% - 24px);
+    padding: 24px 18px;
+    border-radius: 16px;
+  }
+
+  /* Login */
+  .login-box h1 { font-size: 2.4rem; }
+  .login-form input { padding: 14px 16px; }
+  #login-btn { padding: 14px; }
+  .login-scoring { gap: 20px; }
+}
+
+/* ── Very small phones (< 360px) ─────────────────────────────────── */
+@media (max-width: 360px) {
+  .topbar-right { gap: 5px; }
+  .pts-pill { display: none; }
+  .tab { padding: 7px 9px; font-size: .75rem; }
+  .mname { font-size: .76rem; }
+  .score-stepper button { width: 40px; }
+  .score-stepper span { min-width: 48px; }
 }
