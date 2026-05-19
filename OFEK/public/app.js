@@ -72,6 +72,61 @@ function hideErr(id) {
   if (el) el.style.display = 'none';
 }
 
+// ── Countdown helpers ─────────────────────────────────────────────────────────
+let countdownInterval = null;
+
+function startCountdowns() {
+  if (countdownInterval) clearInterval(countdownInterval);
+  updateCountdowns();
+  countdownInterval = setInterval(updateCountdowns, 1000);
+}
+
+function updateCountdowns() {
+  const now = Date.now();
+  document.querySelectorAll('.countdown[data-kickoff]').forEach(el => {
+    const kickoff = parseInt(el.dataset.kickoff, 10);
+    const diff = kickoff - now;
+    if (diff <= 0) {
+      el.textContent = '🔴 LIVE';
+      el.className = 'countdown live';
+      return;
+    }
+    const totalMins = Math.floor(diff / 60000);
+    const days  = Math.floor(totalMins / 1440);
+    const hours = Math.floor((totalMins % 1440) / 60);
+    const mins  = totalMins % 60;
+    const secs  = Math.floor((diff % 60000) / 1000);
+
+    let txt;
+    if (days > 0)       txt = `${days}d ${hours}h`;
+    else if (hours > 0) txt = `${hours}h ${mins}m`;
+    else                txt = `${mins}m ${secs}s`;
+
+    el.textContent = `⏱ ${txt}`;
+    el.className = 'countdown' + (totalMins < 60 ? ' soon' : '');
+  });
+}
+
+// ── Confetti ──────────────────────────────────────────────────────────────────
+function showConfetti() {
+  const colors = ['#ffd700','#ff6b6b','#4ecdc4','#45b7d1','#96ceb4','#ff9f43'];
+  for (let i = 0; i < 60; i++) {
+    const piece = document.createElement('div');
+    piece.className = 'confetti-piece';
+    piece.style.cssText = `
+      left:${Math.random()*100}vw;
+      background:${colors[Math.floor(Math.random()*colors.length)]};
+      animation-duration:${0.8 + Math.random()*1.4}s;
+      animation-delay:${Math.random()*0.5}s;
+      width:${6 + Math.random()*8}px;
+      height:${6 + Math.random()*8}px;
+      border-radius:${Math.random() > 0.5 ? '50%' : '2px'};
+    `;
+    document.body.appendChild(piece);
+    piece.addEventListener('animationend', () => piece.remove());
+  }
+}
+
 // ── App ───────────────────────────────────────────────────────────────────────
 const App = {
 
@@ -86,17 +141,14 @@ const App = {
       this.enterApp();
     }
 
-    // Enter on keydown in login input
     document.getElementById('login-input').addEventListener('keydown', e => {
       if (e.key === 'Enter') this.login();
     });
 
-    // Tab switching
     document.querySelectorAll('.tab').forEach(btn => {
       btn.addEventListener('click', () => this.switchTab(btn.dataset.tab));
     });
 
-    // Filter pills
     document.querySelectorAll('.f-pill').forEach(btn => {
       btn.addEventListener('click', () => {
         document.querySelectorAll('.f-pill').forEach(b => b.classList.remove('active'));
@@ -106,7 +158,6 @@ const App = {
       });
     });
 
-    // Admin key input enter
     document.getElementById('admin-key-input').addEventListener('keydown', e => {
       if (e.key === 'Enter') this.submitAdminKey();
     });
@@ -142,7 +193,6 @@ const App = {
     document.getElementById('topbar-username').textContent = State.username;
     document.getElementById('user-avatar').textContent     = avatar(State.username);
 
-    // Show admin tab always (clicking it opens modal if not unlocked)
     document.getElementById('admin-tab').style.display = '';
 
     if (State.isAdmin) {
@@ -166,7 +216,6 @@ const App = {
 
   // ── Tab switching ──────────────────────────────────────────────────────────
   switchTab(tab) {
-    // Admin gate
     if (tab === 'admin' && !State.isAdmin) {
       this.openAdminModal();
       return;
@@ -185,11 +234,9 @@ const App = {
 
   // ── Polling + auto-sync ────────────────────────────────────────────────────
   startPolling() {
-    // Sync scores from ESPN on load and every 5 minutes
     this.syncData();
     setInterval(() => this.syncData(), 5 * 60 * 1000);
 
-    // Refresh UI every 30 seconds
     setInterval(() => {
       if (State.activeTab === 'markets')     this.loadMarkets();
       if (State.activeTab === 'leaderboard') this.loadLeaderboard();
@@ -200,12 +247,11 @@ const App = {
     try {
       const data = await fetch('/api/sync').then(r => r.json());
       if (data.updated > 0) {
-        // New results came in — refresh immediately
         await this.loadMarkets();
         this.refreshPoints();
         if (State.activeTab === 'leaderboard') this.loadLeaderboard();
       }
-    } catch (_) { /* silent fail */ }
+    } catch (_) {}
   },
 
   // ── MARKETS ────────────────────────────────────────────────────────────────
@@ -254,14 +300,31 @@ const App = {
       }
       return sep + this._marketCard(m, predMap[m.id]);
     }).join('');
+
+    startCountdowns();
   },
 
   _marketCard(m, pred) {
     const isTBD = m.team1 === 'TBD';
     const s     = State.stats[m.id] || { team1pct:33, drawpct:34, team2pct:33, total:0 };
-
-    // Stage label
     const stageTxt = m.stage === 'group' ? m.group_name : stageLabel(m.stage);
+
+    // Kickoff timestamp for countdown
+    const kickoffMs = new Date(`${m.match_date}T${m.match_time || '12:00:00'}`).getTime();
+    const now       = Date.now();
+    const isLive    = !m.completed && kickoffMs <= now && (now - kickoffMs) < 2 * 60 * 60 * 1000;
+    const upcoming  = !m.completed && kickoffMs > now;
+
+    // Countdown html
+    let countdownHtml = '';
+    if (upcoming) {
+      countdownHtml = `<span class="countdown" data-kickoff="${kickoffMs}">⏱</span>`;
+    } else if (isLive) {
+      countdownHtml = `<span class="countdown live">🔴 LIVE</span>`;
+    }
+
+    // Venue
+    const venueHtml = m.venue ? `<div class="match-venue">📍 ${m.venue}</div>` : '';
 
     // Score display for completed matches
     let scoreHtml = '';
@@ -276,7 +339,7 @@ const App = {
       const t1Short = m.team1.split(' ')[0];
       const t2Short = m.team2.split(' ')[0];
       outcomesHtml = `
-        <div class="outcome-row" id="drawer-outcomes">
+        <div class="outcome-row">
           <button class="out-btn${userOut==='team1'?' selected':''}" onclick="App.openDrawer('${m.id}')">
             <span class="out-label">${t1Short}</span>
             <span class="out-pct">${s.team1pct}%</span>
@@ -296,7 +359,6 @@ const App = {
           <div class="dist-team2" style="width:${s.team2pct}%"></div>
         </div>`;
     } else if (m.completed && !isTBD) {
-      // Completed: show distribution of who predicted correctly
       const correctOut = m.score1 > m.score2 ? 'team1' : m.score1 < m.score2 ? 'team2' : 'draw';
       const t1Short = m.team1.split(' ')[0];
       const t2Short = m.team2.split(' ')[0];
@@ -337,11 +399,23 @@ const App = {
       predBadge = `<div class="pred-badge badge-empty" onclick="App.openDrawer('${m.id}')">+ Add prediction</div>`;
     }
 
+    // Actions row (see predictions button for completed matches)
+    let actionsHtml = '';
+    if (m.completed && !isTBD && s.total > 0) {
+      actionsHtml = `
+        <div class="card-actions">
+          <button class="see-preds-btn" onclick="App.openMatchPreds('${m.id}')">👁 See everyone's predictions</button>
+        </div>`;
+    }
+
     return `
       <div class="market-card${m.completed ? ' completed' : ''}${isTBD ? ' tbd' : ''}">
         <div class="market-header">
           <span class="market-stage">${stageTxt}</span>
-          <span class="market-time">${fmtDate(m.match_date)} · ${m.match_time?.slice(0,5)} ET</span>
+          <div class="market-header-right">
+            ${countdownHtml}
+            <span class="market-time">${fmtDate(m.match_date)} · ${m.match_time?.slice(0,5)} ET</span>
+          </div>
         </div>
         <div class="market-teams">
           <div class="market-team">
@@ -354,8 +428,10 @@ const App = {
             <span class="mflag">${flag(m.team2)}</span>
           </div>
         </div>
+        ${venueHtml}
         ${outcomesHtml}
         ${predBadge}
+        ${actionsHtml}
         ${s.total > 0 ? `<div class="market-meta">${s.total} prediction${s.total!==1?'s':''}</div>` : ''}
       </div>`;
   },
@@ -391,7 +467,6 @@ const App = {
     submitBtn.textContent = pred ? 'Update Prediction ⚡' : 'Save Prediction ⚡';
 
     hideErr('drawer-error');
-
     document.getElementById('drawer-overlay').style.display = '';
     document.getElementById('predict-drawer').style.display = '';
     document.getElementById('predict-drawer').classList.add('open');
@@ -420,12 +495,93 @@ const App = {
         score1: State.scores[0],
         score2: State.scores[1],
       });
+      const s1 = State.scores[0], s2 = State.scores[1];
+      const matchSnap = { ...m };
       this.closeDrawer();
       await this.loadMarkets();
       this.refreshPoints();
+      // Show WhatsApp share prompt
+      this._showShareDrawer(matchSnap, s1, s2);
     } catch (e) {
       showErr('drawer-error', e.message);
     }
+  },
+
+  // ── WhatsApp Share ─────────────────────────────────────────────────────────
+  _showShareDrawer(m, s1, s2) {
+    const text = `⚽ WC 2026 Prediction\n${flag(m.team1)} ${m.team1} ${s1} – ${s2} ${m.team2} ${flag(m.team2)}\n🎯 Predicted by ${State.username}\nJoin me: ${location.origin}`;
+    const url  = `https://wa.me/?text=${encodeURIComponent(text)}`;
+
+    // Insert a temporary share banner below the card
+    const existing = document.getElementById('wa-share-banner');
+    if (existing) existing.remove();
+
+    const banner = document.createElement('div');
+    banner.id = 'wa-share-banner';
+    banner.className = 'wa-share-banner';
+    banner.innerHTML = `
+      <span>Prediction saved! 🎉 Share it?</span>
+      <a class="wa-btn" href="${url}" target="_blank" rel="noopener">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.123.554 4.117 1.524 5.852L0 24l6.336-1.498A11.96 11.96 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-1.885 0-3.647-.493-5.168-1.355l-.371-.219-3.762.888.927-3.648-.242-.381A9.944 9.944 0 012 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z"/></svg>
+        Share on WhatsApp
+      </a>
+      <button class="wa-dismiss" onclick="document.getElementById('wa-share-banner').remove()">✕</button>
+    `;
+    document.getElementById('markets-list').prepend(banner);
+    setTimeout(() => { if (document.getElementById('wa-share-banner')) document.getElementById('wa-share-banner').remove(); }, 12000);
+  },
+
+  shareWhatsApp(matchId, s1, s2) {
+    const m    = State.matches.find(x => x.id === matchId);
+    if (!m) return;
+    const text = `⚽ WC 2026 Prediction\n${flag(m.team1)} ${m.team1} ${s1} – ${s2} ${m.team2} ${flag(m.team2)}\n🎯 Predicted by ${State.username}\nJoin me: ${location.origin}`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+  },
+
+  // ── Match Predictions Modal ────────────────────────────────────────────────
+  async openMatchPreds(matchId) {
+    const m = State.matches.find(x => x.id === matchId);
+    if (!m) return;
+
+    document.getElementById('match-preds-overlay').style.display = '';
+    document.getElementById('match-preds-modal').style.display   = '';
+    document.getElementById('match-preds-header').innerHTML = `
+      <div class="mp-header">
+        <div class="mp-match-teams">${flag(m.team1)} ${m.team1} <span class="mp-result">${m.score1}–${m.score2}</span> ${m.team2} ${flag(m.team2)}</div>
+        <div class="mp-sub">What everyone predicted</div>
+      </div>`;
+    document.getElementById('match-preds-list').innerHTML = '<div class="empty-msg">Loading…</div>';
+
+    try {
+      const preds = await api('GET', `/api/match/${matchId}/predictions`, null, State.token);
+      if (!preds.length) {
+        document.getElementById('match-preds-list').innerHTML = '<div class="empty-msg">No predictions for this match</div>';
+        return;
+      }
+      document.getElementById('match-preds-list').innerHTML = preds.map(p => {
+        const pts = p.points || 0;
+        const cls = pts === 3 ? 'mp-exact' : pts === 1 ? 'mp-correct' : 'mp-wrong';
+        const icon = pts === 3 ? '✅' : pts === 1 ? '☑️' : '❌';
+        const isMe = p.username === State.username;
+        return `
+          <div class="mp-row ${cls}${isMe ? ' mp-me' : ''}">
+            <div class="mp-avatar">${avatar(p.username)}</div>
+            <div class="mp-name">${p.username}${isMe ? ' <span class="you-tag">you</span>' : ''}</div>
+            <div class="mp-score">${p.score1}–${p.score2}</div>
+            <div class="mp-pts">${icon} +${pts}</div>
+          </div>`;
+      }).join('');
+      if (preds.some(p => p.points === 3 && p.username === State.username)) {
+        showConfetti();
+      }
+    } catch (e) {
+      document.getElementById('match-preds-list').innerHTML = `<div class="empty-msg">⚠️ ${e.message}</div>`;
+    }
+  },
+
+  closeMatchPreds() {
+    document.getElementById('match-preds-overlay').style.display = 'none';
+    document.getElementById('match-preds-modal').style.display   = 'none';
   },
 
   // ── Leaderboard ────────────────────────────────────────────────────────────
@@ -443,13 +599,19 @@ const App = {
       el.innerHTML = board.map((u, i) => {
         const medal = ['🥇','🥈','🥉'][i] || '';
         const isMe  = u.username === State.username;
+        const streakBadge = u.streak >= 3
+          ? `<span class="streak-badge">🔥 ${u.streak}</span>`
+          : '';
+        const accuracyTxt = u.predictions > 0
+          ? `${Math.round((u.exact + u.correct) / u.predictions * 100)}% acc`
+          : '';
         return `
           <div class="lb-row${isMe ? ' lb-me' : ''}">
             <div class="lb-rank">${medal || `<span class="rank-num">${i+1}</span>`}</div>
             <div class="lb-avatar">${avatar(u.username)}</div>
             <div class="lb-info">
-              <div class="lb-name">${u.username}${isMe ? ' <span class="you-tag">you</span>' : ''}</div>
-              <div class="lb-detail">${u.exact} exact · ${u.correct} correct · ${u.predictions} predictions</div>
+              <div class="lb-name">${u.username}${isMe ? ' <span class="you-tag">you</span>' : ''} ${streakBadge}</div>
+              <div class="lb-detail">${u.exact} exact · ${u.correct} correct · ${accuracyTxt}</div>
             </div>
             <div class="lb-pts">${u.total}<span class="pts-label">pts</span></div>
           </div>`;
@@ -461,14 +623,52 @@ const App = {
 
   // ── My Bets ────────────────────────────────────────────────────────────────
   async loadMyBets() {
-    const el = document.getElementById('mybets-list');
-    el.innerHTML = '<div class="empty-msg">Loading…</div>';
+    const el      = document.getElementById('mybets-list');
+    const statsEl = document.getElementById('my-stats-grid');
+    el.innerHTML      = '<div class="empty-msg">Loading…</div>';
+    statsEl.innerHTML = '';
+
     try {
-      const preds = await api('GET', '/api/predictions', null, State.token);
+      const [preds, userStats] = await Promise.all([
+        api('GET', '/api/predictions', null, State.token),
+        api('GET', '/api/user/stats',   null, State.token),
+      ]);
+
+      // Stats grid
+      if (userStats && userStats.predictions > 0) {
+        const streakHtml = userStats.streak >= 3
+          ? `<span class="streak-badge" style="font-size:0.75rem">🔥 ${userStats.streak}</span>`
+          : userStats.streak || '—';
+        statsEl.innerHTML = `
+          <div class="stat-card">
+            <div class="stat-val green">${userStats.accuracy ?? 0}%</div>
+            <div class="stat-lbl">Accuracy</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-val gold">${userStats.exactRate ?? 0}%</div>
+            <div class="stat-lbl">Exact Score</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-val blue">${streakHtml}</div>
+            <div class="stat-lbl">Current Streak</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-val red">${userStats.bestStreak ?? 0}</div>
+            <div class="stat-lbl">Best Streak</div>
+          </div>
+          ${userStats.favoriteTeam ? `
+          <div class="stat-card" style="grid-column:1/-1">
+            <div class="stat-fav">${flag(userStats.favoriteTeam)} ${userStats.favoriteTeam}</div>
+            <div class="stat-lbl">Most predicted team</div>
+          </div>` : ''}
+        `;
+      }
+
       if (!preds.length) {
         el.innerHTML = '<div class="empty-msg">No predictions yet — go to Markets and predict!</div>';
         return;
       }
+
       let lastDate = null;
       el.innerHTML = preds.map(p => {
         let sep = '';
@@ -479,12 +679,19 @@ const App = {
         const pts = p.points || 0;
         let badge = '', cls = '';
         if (p.completed) {
-          cls  = pts === 3 ? 'badge-exact' : pts === 1 ? 'badge-correct' : 'badge-wrong';
+          cls   = pts === 3 ? 'badge-exact' : pts === 1 ? 'badge-correct' : 'badge-wrong';
           badge = pts === 3 ? `✅ Exact! +3` : pts === 1 ? `☑️ Correct result +1` : `❌ Wrong +0`;
         } else {
           cls = 'badge-pending'; badge = '⏳ Pending';
         }
         const stageTxt = p.stage === 'group' ? p.group_name : stageLabel(p.stage);
+
+        // WhatsApp share for pending predictions
+        const waBtn = !p.completed ? `
+          <button class="wa-btn-sm" onclick="App.shareWhatsApp('${p.match_id}',${p.score1},${p.score2})">
+            Share 📲
+          </button>` : '';
+
         return sep + `
           <div class="mybet-card${p.completed ? ' completed' : ''}">
             <div class="mybet-top">
@@ -500,7 +707,10 @@ const App = {
                 ${p.completed ? `<span class="result-score">(${p.result1}–${p.result2})</span>` : ''}
               </div>
             </div>
-            <div class="pred-badge ${cls}">${badge}</div>
+            <div class="mybet-footer">
+              <div class="pred-badge ${cls}">${badge}</div>
+              ${waBtn}
+            </div>
           </div>`;
       }).join('');
     } catch (e) {

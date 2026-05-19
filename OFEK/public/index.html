@@ -11,6 +11,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
 </head>
 <body>
 
@@ -92,6 +94,7 @@
       <div class="lb-header">
         <h2>My Predictions</h2>
       </div>
+      <div id="my-stats-grid" class="stats-grid"></div>
       <div id="mybets-list"></div>
     </div>
 
@@ -184,6 +187,14 @@
   <input id="admin-key-input" type="password" placeholder="Admin key…" />
   <button class="submit-btn" onclick="App.submitAdminKey()">Unlock</button>
   <p id="admin-key-error" class="drawer-err" style="display:none"></p>
+</div>
+
+<!-- ─── MATCH PREDICTIONS MODAL ────────────────────────────────────── -->
+<div id="match-preds-overlay" class="drawer-overlay" style="display:none" onclick="App.closeMatchPreds()"></div>
+<div id="match-preds-modal" class="modal-card wide-modal" style="display:none">
+  <div id="match-preds-header"></div>
+  <div id="match-preds-list"></div>
+  <button class="submit-btn" style="margin-top:14px" onclick="App.closeMatchPreds()">Close</button>
 </div>
 
 <script src="app.js"></script>

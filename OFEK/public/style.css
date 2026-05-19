@@ -841,6 +841,194 @@ input  { font-family: inherit; }
 }
 .enter-result-btn:hover { background: rgba(255,184,77,.2); }
 
+/* ── Stats grid (My Bets) ────────────────────────────────────────── */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.stat-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 10px;
+  text-align: center;
+}
+.stat-val {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1;
+  margin-bottom: 4px;
+}
+.stat-val.green { color: var(--green); }
+.stat-val.gold  { color: var(--gold); }
+.stat-val.blue  { color: var(--blue); }
+.stat-val.red   { color: var(--red); }
+.stat-lbl {
+  font-size: .65rem;
+  color: var(--muted);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+}
+.stat-fav {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 16px;
+  font-size: .82rem;
+  color: var(--muted);
+}
+.stat-fav span { font-weight: 600; color: var(--text); }
+
+/* ── Countdown timer ─────────────────────────────────────────────── */
+.countdown {
+  font-size: .7rem;
+  font-weight: 600;
+  color: var(--gold);
+  background: var(--gold2);
+  border: 1px solid rgba(255,184,77,.2);
+  border-radius: 5px;
+  padding: 2px 7px;
+  white-space: nowrap;
+}
+.countdown.live {
+  color: var(--red);
+  background: var(--red2);
+  border-color: rgba(255,68,85,.2);
+  animation: pulse 1.4s infinite;
+}
+.countdown.soon { color: var(--red); background: var(--red2); border-color: rgba(255,68,85,.2); }
+
+/* ── Match predictions modal ─────────────────────────────────────── */
+.wide-modal {
+  max-width: 480px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+.mp-header {
+  text-align: center;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 14px;
+}
+.mp-match-teams { font-size: 1rem; font-weight: 700; margin-bottom: 4px; }
+.mp-result { font-size: 1.4rem; font-weight: 800; color: var(--green); margin-bottom: 4px; }
+.mp-sub { font-size: .75rem; color: var(--muted); }
+.mp-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 4px;
+  background: var(--card2);
+  border: 1px solid var(--border);
+  gap: 8px;
+}
+.mp-row.mp-exact   { border-color: rgba(0,217,139,.3);  background: rgba(0,217,139,.06); }
+.mp-row.mp-correct { border-color: rgba(59,130,246,.3); background: rgba(59,130,246,.06); }
+.mp-row.mp-wrong   { border-color: rgba(255,68,85,.2);  background: rgba(255,68,85,.04); }
+.mp-name  { font-weight: 600; font-size: .88rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mp-score { font-size: .9rem; font-weight: 700; color: var(--text); white-space: nowrap; }
+.mp-pts   { font-size: .75rem; font-weight: 700; min-width: 32px; text-align: right; }
+.mp-pts.p3 { color: var(--green); }
+.mp-pts.p1 { color: var(--blue); }
+.mp-pts.p0 { color: var(--muted); }
+.mp-empty { text-align: center; color: var(--muted); font-size: .85rem; padding: 20px; }
+
+/* ── WhatsApp share button ───────────────────────────────────────── */
+.wa-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(37,211,102,.12);
+  border: 1px solid rgba(37,211,102,.3);
+  border-radius: 8px;
+  color: #25d366;
+  font-size: .78rem;
+  font-weight: 600;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: background .2s;
+  margin-top: 10px;
+  text-decoration: none;
+}
+.wa-btn:hover { background: rgba(37,211,102,.2); }
+
+/* ── See predictions button ──────────────────────────────────────── */
+.see-preds-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--card2);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: .75rem;
+  font-weight: 500;
+  padding: 5px 10px;
+  cursor: pointer;
+  margin-top: 8px;
+  transition: all .2s;
+}
+.see-preds-btn:hover { color: var(--blue); border-color: var(--blue); }
+
+/* ── Card footer row ─────────────────────────────────────────────── */
+.card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+/* ── Venue label ─────────────────────────────────────────────────── */
+.match-venue {
+  font-size: .68rem;
+  color: var(--muted);
+  opacity: .7;
+  margin-top: 2px;
+}
+
+/* ── Confetti ────────────────────────────────────────────────────── */
+.confetti-piece {
+  position: fixed;
+  top: -10px;
+  border-radius: 2px;
+  z-index: 9999;
+  pointer-events: none;
+  animation: confetti-fall 1.2s ease-in forwards;
+}
+@keyframes confetti-fall {
+  0%   { transform: translateY(0) rotate(0deg) scale(1); opacity: 1; }
+  80%  { opacity: 1; }
+  100% { transform: translateY(105vh) rotate(720deg) scale(.5); opacity: 0; }
+}
+
+/* ── Leaderboard streak badge ────────────────────────────────────── */
+.streak-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: var(--gold2);
+  border: 1px solid rgba(255,184,77,.25);
+  color: var(--gold);
+  border-radius: 5px;
+  font-size: .65rem;
+  font-weight: 700;
+  padding: 1px 5px;
+  margin-left: 4px;
+}
+
 /* ── Mobile — touch & global ─────────────────────────────────────── */
 button, a { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
 html { -webkit-text-size-adjust: 100%; }
@@ -954,4 +1142,60 @@ html { -webkit-text-size-adjust: 100%; }
   .mname { font-size: .76rem; }
   .score-stepper button { width: 40px; }
   .score-stepper span { min-width: 48px; }
+}
+
+/* ── Market header right (countdown + time) ───────────────────────── */
+.market-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.market-header-right { display: flex; align-items: center; gap: 8px; }
+
+/* ── WhatsApp share banner ────────────────────────────────────────── */
+.wa-share-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: linear-gradient(135deg, rgba(37,211,102,.15), rgba(37,211,102,.06));
+  border: 1px solid rgba(37,211,102,.3);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  font-size: .85rem;
+  color: var(--text);
+  animation: slideDown .3s ease;
+}
+.wa-share-banner span { flex: 1; }
+.wa-dismiss {
+  background: transparent;
+  color: var(--muted);
+  font-size: .9rem;
+  padding: 2px 6px;
+}
+.wa-dismiss:hover { color: var(--text); }
+
+/* ── WhatsApp small button (My Bets) ──────────────────────────────── */
+.wa-btn-sm {
+  background: rgba(37,211,102,.15);
+  color: #25d366;
+  border: 1px solid rgba(37,211,102,.3);
+  border-radius: 8px;
+  padding: 5px 12px;
+  font-size: .78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s;
+}
+.wa-btn-sm:hover { background: rgba(37,211,102,.25); }
+
+/* ── mybet footer row ─────────────────────────────────────────────── */
+.mybet-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+}
+.mybet-footer .pred-badge { margin-top: 0; flex: 1; }
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
 }

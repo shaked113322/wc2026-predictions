@@ -359,16 +359,106 @@ app.get('/api/leaderboard', async (req, res) => {
     const sql = getSQL();
     const rows = await sql`
       SELECT u.id, u.username,
-             COALESCE(SUM(p.points), 0)::int                          AS total,
-             COUNT(CASE WHEN p.points = 3 THEN 1 END)::int            AS exact,
-             COUNT(CASE WHEN p.points = 1 THEN 1 END)::int            AS correct,
-             COUNT(p.id)::int                                          AS predictions
+             COALESCE(SUM(p.points), 0)::int                                    AS total,
+             COUNT(CASE WHEN p.points = 3 THEN 1 END)::int                      AS exact,
+             COUNT(CASE WHEN p.points = 1 THEN 1 END)::int                      AS correct,
+             COUNT(CASE WHEN m.completed = true THEN 1 END)::int                AS completed_preds,
+             COUNT(CASE WHEN m.completed = true AND p.points > 0 THEN 1 END)::int AS correct_total,
+             COUNT(p.id)::int                                                    AS predictions
       FROM users u
       LEFT JOIN predictions p ON p.user_id = u.id
+      LEFT JOIN matches m ON m.id = p.match_id
       GROUP BY u.id, u.username
       ORDER BY total DESC, exact DESC, predictions DESC`;
-    res.json(rows);
+
+    const board = [];
+    for (const u of rows) {
+      const streakRows = await sql`
+        SELECT p.points FROM predictions p
+        JOIN matches m ON m.id = p.match_id
+        WHERE p.user_id = ${u.id} AND m.completed = true
+        ORDER BY m.match_date DESC, m.match_time DESC`;
+      let streak = 0;
+      for (const p of streakRows) {
+        if ((p.points || 0) > 0) streak++;
+        else break;
+      }
+      const accuracy = u.completed_preds > 0
+        ? Math.round(u.correct_total / u.completed_preds * 100) : 0;
+      board.push({ ...u, streak, accuracy });
+    }
+    res.json(board);
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Personal stats ────────────────────────────────────────────────────────────
+app.get('/api/user/stats', async (req, res) => {
+  try {
+    const sql = getSQL();
+    const users = await sql`SELECT * FROM users WHERE token = ${req.headers.authorization}`;
+    if (!users.length) return res.status(401).json({ error: 'Invalid session' });
+    const user = users[0];
+
+    const preds = await sql`
+      SELECT p.score1, p.score2, p.points, m.team1, m.team2,
+             m.completed, m.match_date, m.match_time
+      FROM predictions p
+      JOIN matches m ON m.id = p.match_id
+      WHERE p.user_id = ${user.id}
+      ORDER BY m.match_date, m.match_time`;
+
+    const done = preds.filter(p => p.completed);
+    const correct = done.filter(p => p.points > 0);
+    const exact = done.filter(p => p.points === 3);
+
+    // Current streak (most recent first)
+    const desc = [...done].sort((a,b) =>
+      (b.match_date+b.match_time).localeCompare(a.match_date+a.match_time));
+    let streak = 0;
+    for (const p of desc) { if (p.points > 0) streak++; else break; }
+
+    // Best streak
+    let best = 0, cur = 0;
+    for (const p of done) { p.points > 0 ? (cur++, best = Math.max(best,cur)) : (cur=0); }
+
+    // Favorite team
+    const tc = {};
+    for (const p of preds) { tc[p.team1]=(tc[p.team1]||0)+1; tc[p.team2]=(tc[p.team2]||0)+1; }
+    const favoriteTeam = Object.entries(tc).sort((a,b)=>b[1]-a[1])[0]?.[0] || null;
+
+    res.json({
+      total: preds.length,
+      completed: done.length,
+      correct: correct.length,
+      exact: exact.length,
+      accuracy: done.length ? Math.round(correct.length/done.length*100) : 0,
+      exactRate: done.length ? Math.round(exact.length/done.length*100) : 0,
+      streak,
+      bestStreak: best,
+      favoriteTeam,
+      points: done.reduce((s,p) => s+(p.points||0), 0),
+    });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Match predictions (visible 1h before kickoff) ─────────────────────────────
+app.get('/api/match/:id/predictions', async (req, res) => {
+  try {
+    const sql = getSQL();
+    const matches = await sql`SELECT * FROM matches WHERE id = ${req.params.id}`;
+    if (!matches.length) return res.status(404).json({ error: 'Not found' });
+    const m = matches[0];
+    const kickoff = new Date(`${m.match_date}T${m.match_time}:00`);
+    if (new Date() < new Date(kickoff.getTime() - 3600000) && !m.completed)
+      return res.status(403).json({ error: 'locked' });
+    const rows = await sql`
+      SELECT u.username, p.score1, p.score2, p.points
+      FROM predictions p
+      JOIN users u ON u.id = p.user_id
+      WHERE p.match_id = ${req.params.id}
+      ORDER BY p.points DESC NULLS LAST, u.username`;
+    res.json({ match: m, predictions: rows });
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 // ── Enter result (admin) ──────────────────────────────────────────────────────
