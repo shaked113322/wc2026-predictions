@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WC2026 Predictions</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- ─── LOGIN ─────────────────────────────────────────────────── -->
+<div id="screen-login" class="screen active">
+  <div class="login-wrap">
+    <div class="login-box">
+      <div class="login-badge">FIFA</div>
+      <h1>World Cup<br><span class="year-accent">2026</span></h1>
+      <p class="login-sub">Predict every match. Compete with friends.</p>
+      <div class="login-form">
+        <input id="login-input" type="text" placeholder="Enter your name…" maxlength="24" autocomplete="off" />
+        <button id="login-btn" onclick="App.login()">Start predicting <span class="arrow">→</span></button>
+      </div>
+      <p id="login-error" class="login-err" style="display:none"></p>
+      <div class="login-scoring">
+        <div class="sc-item"><span class="sc-pts">+3</span>Exact score</div>
+        <div class="sc-item"><span class="sc-pts">+1</span>Correct result</div>
+        <div class="sc-item"><span class="sc-pts">+0</span>Wrong</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── APP ───────────────────────────────────────────────────── -->
+<div id="screen-app" class="screen">
+
+  <!-- Top bar -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <span class="topbar-logo">⚽ WC<b>2026</b></span>
+    </div>
+    <div class="topbar-right">
+      <div class="user-pill" id="user-pill">
+        <span class="user-avatar" id="user-avatar"></span>
+        <span id="topbar-username"></span>
+      </div>
+      <div class="pts-pill" id="pts-pill" style="display:none">
+        <span id="topbar-pts">0</span> pts
+      </div>
+      <button class="icon-btn" onclick="App.logout()" title="Logout">⏻</button>
+    </div>
+  </header>
+
+  <!-- Navigation -->
+  <nav class="tab-nav">
+    <button class="tab active" data-tab="markets">Markets</button>
+    <button class="tab" data-tab="leaderboard">Leaderboard</button>
+    <button class="tab" data-tab="mybets">My Bets</button>
+    <button class="tab" data-tab="groups">Groups</button>
+    <button class="tab admin-tab" data-tab="admin" id="admin-tab" style="display:none">Admin</button>
+  </nav>
+
+  <main id="main-content">
+
+    <!-- ── MARKETS ─────────────────────────────────────────────── -->
+    <div id="tab-markets" class="tab-pane active">
+      <div class="filter-bar">
+        <button class="f-pill active" data-filter="upcoming">Upcoming</button>
+        <button class="f-pill" data-filter="all">All</button>
+        <button class="f-pill" data-filter="group">Group Stage</button>
+        <button class="f-pill" data-filter="knockout">Knockout</button>
+        <button class="f-pill" data-filter="completed">Results</button>
+      </div>
+      <div id="markets-list"></div>
+    </div>
+
+    <!-- ── LEADERBOARD ─────────────────────────────────────────── -->
+    <div id="tab-leaderboard" class="tab-pane">
+      <div class="lb-header">
+        <h2>Leaderboard</h2>
+        <p class="lb-sub" id="lb-sub"></p>
+      </div>
+      <div id="lb-list"></div>
+    </div>
+
+    <!-- ── MY BETS ─────────────────────────────────────────────── -->
+    <div id="tab-mybets" class="tab-pane">
+      <div class="lb-header">
+        <h2>My Predictions</h2>
+      </div>
+      <div id="mybets-list"></div>
+    </div>
+
+    <!-- ── GROUPS ──────────────────────────────────────────────── -->
+    <div id="tab-groups" class="tab-pane">
+      <div class="lb-header"><h2>Group Standings</h2></div>
+      <div id="groups-grid" class="groups-grid"></div>
+    </div>
+
+    <!-- ── ADMIN ───────────────────────────────────────────────── -->
+    <div id="tab-admin" class="tab-pane">
+      <div class="lb-header">
+        <h2>Enter Results</h2>
+        <p class="lb-sub">Only completed / in-progress matches</p>
+      </div>
+      <div id="admin-list"></div>
+    </div>
+
+  </main>
+</div>
+
+<!-- ─── PREDICT DRAWER ─────────────────────────────────────────── -->
+<div id="drawer-overlay" class="drawer-overlay" style="display:none" onclick="App.closeDrawer()"></div>
+<div id="predict-drawer" class="drawer" style="display:none">
+  <div class="drawer-handle"></div>
+  <div class="drawer-inner">
+    <div class="drawer-match" id="drawer-match-info"></div>
+    <div class="outcome-row" id="drawer-outcomes"></div>
+    <div class="score-row" id="score-row">
+      <div class="score-col">
+        <div class="score-team-name" id="sc-team1"></div>
+        <div class="score-stepper">
+          <button onclick="App.stepScore(0,-1)">−</button>
+          <span id="sc-val1">0</span>
+          <button onclick="App.stepScore(0,1)">+</button>
+        </div>
+      </div>
+      <div class="score-colon">:</div>
+      <div class="score-col">
+        <div class="score-team-name" id="sc-team2"></div>
+        <div class="score-stepper">
+          <button onclick="App.stepScore(1,-1)">−</button>
+          <span id="sc-val2">0</span>
+          <button onclick="App.stepScore(1,1)">+</button>
+        </div>
+      </div>
+    </div>
+    <button class="submit-btn" id="drawer-submit" onclick="App.submitPrediction()">
+      Save Prediction ⚡
+    </button>
+    <p id="drawer-error" class="drawer-err" style="display:none"></p>
+  </div>
+</div>
+
+<!-- ─── ADMIN RESULT DRAWER ─────────────────────────────────────── -->
+<div id="result-drawer-overlay" class="drawer-overlay" style="display:none" onclick="App.closeResultDrawer()"></div>
+<div id="result-drawer" class="drawer" style="display:none">
+  <div class="drawer-handle"></div>
+  <div class="drawer-inner">
+    <div class="drawer-match" id="result-match-info"></div>
+    <div class="score-row">
+      <div class="score-col">
+        <div class="score-team-name" id="res-team1"></div>
+        <div class="score-stepper">
+          <button onclick="App.stepResult(0,-1)">−</button>
+          <span id="res-val1">0</span>
+          <button onclick="App.stepResult(0,1)">+</button>
+        </div>
+      </div>
+      <div class="score-colon">:</div>
+      <div class="score-col">
+        <div class="score-team-name" id="res-team2"></div>
+        <div class="score-stepper">
+          <button onclick="App.stepResult(1,-1)">−</button>
+          <span id="res-val2">0</span>
+          <button onclick="App.stepResult(1,1)">+</button>
+        </div>
+      </div>
+    </div>
+    <button class="submit-btn" onclick="App.submitResult()">Confirm Result ✅</button>
+    <p id="result-error" class="drawer-err" style="display:none"></p>
+  </div>
+</div>
+
+<!-- ─── ADMIN KEY MODAL ─────────────────────────────────────────── -->
+<div id="admin-modal-overlay" class="drawer-overlay" style="display:none" onclick="App.closeAdminModal()"></div>
+<div id="admin-modal" class="modal-card" style="display:none">
+  <h3>🔑 Admin Access</h3>
+  <p>Enter the admin key to unlock result entry</p>
+  <input id="admin-key-input" type="password" placeholder="Admin key…" />
+  <button class="submit-btn" onclick="App.submitAdminKey()">Unlock</button>
+  <p id="admin-key-error" class="drawer-err" style="display:none"></p>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "name": "worldcup2026-predictions",
+  "version": "1.0.0",
+  "description": "World Cup 2026 Predictions Game",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.3",
+    "mongoose": "^8.4.0",
+    "uuid": "^9.0.1",
+    "dotenv": "^16.4.5"
+  }
+}
