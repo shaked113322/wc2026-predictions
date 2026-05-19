@@ -1,7 +1,7 @@
 require('dotenv').config();
 
 const express = require('express');
-const mongoose = require('mongoose');
+const { neon } = require('@neondatabase/serverless');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 
@@ -12,64 +12,62 @@ const ADMIN_KEY = process.env.ADMIN_KEY || 'wc2026admin';
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ── MongoDB connection (cached for serverless warm starts) ─────────────────────
-let _connected = false;
-async function connectDB() {
-  if (_connected) return;
-  if (!process.env.MONGODB_URI) throw new Error('MONGODB_URI is not set');
-  await mongoose.connect(process.env.MONGODB_URI);
-  _connected = true;
+// ── DB ────────────────────────────────────────────────────────────────────────
+function getSQL() {
+  const url = process.env.POSTGRES_URL;
+  if (!url) throw new Error('POSTGRES_URL is not set');
+  return neon(url);
 }
 
-// ── Models ────────────────────────────────────────────────────────────────────
-const UserSchema = new mongoose.Schema({
-  _id:      { type: String },
-  token:    { type: String, unique: true, required: true },
-  username: { type: String, unique: true, required: true },
-}, { _id: false });
+// ── Setup tables + seed (runs once per cold start, idempotent) ────────────────
+let initialized = false;
+async function ensureInit() {
+  if (initialized) return;
+  const sql = getSQL();
 
-const MatchSchema = new mongoose.Schema({
-  _id:        { type: String },
-  group_name: String,
-  stage:      String,
-  team1:      String,
-  team2:      String,
-  match_date: String,
-  match_time: String,
-  venue:      String,
-  score1:     { type: Number, default: null },
-  score2:     { type: Number, default: null },
-  completed:  { type: Boolean, default: false },
-}, { _id: false });
+  await sql`
+    CREATE TABLE IF NOT EXISTS users (
+      id       TEXT PRIMARY KEY,
+      token    TEXT UNIQUE NOT NULL,
+      username TEXT UNIQUE NOT NULL
+    )`;
 
-const PredictionSchema = new mongoose.Schema({
-  _id:        { type: String },
-  user_match: { type: String, unique: true, required: true },
-  user_id:    { type: String, required: true },
-  match_id:   { type: String, required: true },
-  score1:     Number,
-  score2:     Number,
-  points:     { type: Number, default: 0 },
-}, { _id: false });
+  await sql`
+    CREATE TABLE IF NOT EXISTS matches (
+      id         TEXT PRIMARY KEY,
+      group_name TEXT,
+      stage      TEXT,
+      team1      TEXT,
+      team2      TEXT,
+      match_date TEXT,
+      match_time TEXT,
+      venue      TEXT,
+      score1     INTEGER,
+      score2     INTEGER,
+      completed  BOOLEAN NOT NULL DEFAULT FALSE
+    )`;
 
-const User       = mongoose.models.User       || mongoose.model('User',       UserSchema);
-const Match      = mongoose.models.Match      || mongoose.model('Match',      MatchSchema);
-const Prediction = mongoose.models.Prediction || mongoose.model('Prediction', PredictionSchema);
+  await sql`
+    CREATE TABLE IF NOT EXISTS predictions (
+      id         TEXT PRIMARY KEY,
+      user_match TEXT UNIQUE NOT NULL,
+      user_id    TEXT NOT NULL,
+      match_id   TEXT NOT NULL,
+      score1     INTEGER,
+      score2     INTEGER,
+      points     INTEGER NOT NULL DEFAULT 0
+    )`;
 
-// ── Middleware: ensure DB is connected + matches are seeded ───────────────────
-let seeded = false;
+  // Seed matches only if table is empty
+  const [{ count }] = await sql`SELECT COUNT(*)::int AS count FROM matches`;
+  if (count === 0) await seedMatches(sql);
+
+  initialized = true;
+}
+
 app.use(async (req, res, next) => {
-  try {
-    await connectDB();
-    if (!seeded) {
-      await seedMatches();
-      seeded = true;
-    }
-    next();
-  } catch (e) {
-    console.error('DB error:', e.message);
-    res.status(500).json({ error: 'Database connection failed' });
-  }
+  try { await ensureInit(); next(); }
+  catch (e) { console.error(e); res.status(500).json({ error: 'DB init failed' }); }
 });
 
 // ════════════════════════════════════════════════════════════════
@@ -98,77 +96,66 @@ const GROUP_MATCHES = [
   ['A','Mexico','South Korea','2026-06-18','21:00','Estadio Akron, Guadalajara'],
   ['A','Mexico','Czechia','2026-06-24','21:00','Estadio Azteca, Mexico City'],
   ['A','South Africa','South Korea','2026-06-24','21:00','Estadio BBVA, Monterrey'],
-
   ['B','Canada','Bosnia-Herz.','2026-06-12','15:00','BMO Field, Toronto'],
   ['B','Qatar','Switzerland','2026-06-13','12:00',"Levi's Stadium, Santa Clara"],
   ['B','Switzerland','Bosnia-Herz.','2026-06-18','15:00','SoFi Stadium, Los Angeles'],
   ['B','Canada','Qatar','2026-06-18','18:00','BC Place, Vancouver'],
   ['B','Canada','Switzerland','2026-06-25','15:00','BMO Field, Toronto'],
   ['B','Bosnia-Herz.','Qatar','2026-06-25','15:00',"Levi's Stadium, Santa Clara"],
-
   ['C','Brazil','Morocco','2026-06-13','18:00','MetLife Stadium, East Rutherford'],
   ['C','Haiti','Scotland','2026-06-13','21:00','Gillette Stadium, Foxborough'],
   ['C','Scotland','Morocco','2026-06-19','18:00','Gillette Stadium, Foxborough'],
   ['C','Brazil','Haiti','2026-06-19','20:30','Lincoln Financial Field, Philadelphia'],
   ['C','Morocco','Haiti','2026-06-24','18:00','Mercedes-Benz Stadium, Atlanta'],
   ['C','Scotland','Brazil','2026-06-24','18:00','Hard Rock Stadium, Miami'],
-
   ['D','USA','Paraguay','2026-06-12','21:00','SoFi Stadium, Los Angeles'],
   ['D','Australia','Türkiye','2026-06-13','21:00','BC Place, Vancouver'],
   ['D','USA','Australia','2026-06-19','15:00','Lumen Field, Seattle'],
   ['D','Paraguay','Türkiye','2026-06-20','12:00','Arrowhead Stadium, Kansas City'],
   ['D','USA','Türkiye','2026-06-26','18:00','MetLife Stadium, East Rutherford'],
   ['D','Paraguay','Australia','2026-06-26','18:00','AT&T Stadium, Arlington'],
-
   ['E','Germany','Curaçao','2026-06-14','13:00','NRG Stadium, Houston'],
   ['E','Ivory Coast','Ecuador','2026-06-14','19:00','Lincoln Financial Field, Philadelphia'],
   ['E','Germany','Ivory Coast','2026-06-20','16:00','BMO Field, Toronto'],
   ['E','Ecuador','Curaçao','2026-06-20','20:00','Arrowhead Stadium, Kansas City'],
   ['E','Ecuador','Germany','2026-06-25','16:00','MetLife Stadium, East Rutherford'],
   ['E','Curaçao','Ivory Coast','2026-06-25','16:00','Lincoln Financial Field, Philadelphia'],
-
   ['F','Netherlands','Japan','2026-06-14','16:00','AT&T Stadium, Arlington'],
   ['F','Sweden','Tunisia','2026-06-14','22:00','Estadio BBVA, Monterrey'],
   ['F','Netherlands','Sweden','2026-06-20','13:00','NRG Stadium, Houston'],
   ['F','Tunisia','Japan','2026-06-20','22:00','Estadio BBVA, Monterrey'],
   ['F','Japan','Sweden','2026-06-25','19:00','AT&T Stadium, Arlington'],
   ['F','Tunisia','Netherlands','2026-06-25','19:00','Arrowhead Stadium, Kansas City'],
-
   ['G','Belgium','Egypt','2026-06-15','15:00','Lumen Field, Seattle'],
   ['G','Iran','New Zealand','2026-06-15','21:00','SoFi Stadium, Los Angeles'],
   ['G','Belgium','Iran','2026-06-21','15:00','SoFi Stadium, Los Angeles'],
   ['G','Egypt','New Zealand','2026-06-21','21:00','Lumen Field, Seattle'],
   ['G','Belgium','New Zealand','2026-06-26','21:00','MetLife Stadium, East Rutherford'],
   ['G','Egypt','Iran','2026-06-26','21:00','Rose Bowl, Los Angeles'],
-
   ['H','Spain','Cape Verde','2026-06-15','12:00','Mercedes-Benz Stadium, Atlanta'],
   ['H','Saudi Arabia','Uruguay','2026-06-15','18:00','Hard Rock Stadium, Miami'],
   ['H','Spain','Saudi Arabia','2026-06-21','12:00','Mercedes-Benz Stadium, Atlanta'],
   ['H','Cape Verde','Uruguay','2026-06-22','18:00','Hard Rock Stadium, Miami'],
   ['H','Spain','Uruguay','2026-06-26','21:00',"Levi's Stadium, Santa Clara"],
   ['H','Cape Verde','Saudi Arabia','2026-06-26','21:00','Rose Bowl, Los Angeles'],
-
   ['I','France','Senegal','2026-06-16','15:00','MetLife Stadium, East Rutherford'],
   ['I','Iraq','Norway','2026-06-16','18:00','Gillette Stadium, Foxborough'],
   ['I','France','Iraq','2026-06-22','15:00','MetLife Stadium, East Rutherford'],
   ['I','Senegal','Norway','2026-06-22','18:00','Gillette Stadium, Foxborough'],
   ['I','France','Norway','2026-06-26','18:00','Lumen Field, Seattle'],
   ['I','Senegal','Iraq','2026-06-26','18:00','AT&T Stadium, Arlington'],
-
   ['J','Austria','Jordan','2026-06-14','21:00',"Levi's Stadium, Santa Clara"],
   ['J','Argentina','Algeria','2026-06-16','21:00','Arrowhead Stadium, Kansas City'],
   ['J','Argentina','Austria','2026-06-22','21:00','Arrowhead Stadium, Kansas City'],
   ['J','Algeria','Jordan','2026-06-22','18:00',"Levi's Stadium, Santa Clara"],
   ['J','Algeria','Austria','2026-06-27','22:00','Arrowhead Stadium, Kansas City'],
   ['J','Jordan','Argentina','2026-06-27','22:00','AT&T Stadium, Arlington'],
-
   ['K','Portugal','DR Congo','2026-06-17','13:00','NRG Stadium, Houston'],
   ['K','Uzbekistan','Colombia','2026-06-17','22:00','Estadio Azteca, Mexico City'],
   ['K','Portugal','Uzbekistan','2026-06-23','13:00','NRG Stadium, Houston'],
   ['K','Colombia','DR Congo','2026-06-23','22:00','Estadio Akron, Guadalajara'],
   ['K','Portugal','Colombia','2026-06-27','19:30','Hard Rock Stadium, Miami'],
   ['K','DR Congo','Uzbekistan','2026-06-27','19:30','Mercedes-Benz Stadium, Atlanta'],
-
   ['L','England','Croatia','2026-06-17','16:00','AT&T Stadium, Arlington'],
   ['L','Ghana','Panama','2026-06-18','15:00','Rose Bowl, Los Angeles'],
   ['L','England','Ghana','2026-06-23','16:00','Gillette Stadium, Foxborough'],
@@ -178,15 +165,15 @@ const GROUP_MATCHES = [
 ];
 
 const KNOCKOUT_MATCHES = [
-  ['R32 Match 1', 'r32','2026-06-28','15:00','MetLife Stadium, East Rutherford'],
-  ['R32 Match 2', 'r32','2026-06-28','19:00','SoFi Stadium, Los Angeles'],
-  ['R32 Match 3', 'r32','2026-06-29','15:00','AT&T Stadium, Arlington'],
-  ['R32 Match 4', 'r32','2026-06-29','19:00','Mercedes-Benz Stadium, Atlanta'],
-  ['R32 Match 5', 'r32','2026-06-30','15:00','NRG Stadium, Houston'],
-  ['R32 Match 6', 'r32','2026-06-30','19:00','Hard Rock Stadium, Miami'],
-  ['R32 Match 7', 'r32','2026-07-01','15:00','Lumen Field, Seattle'],
-  ['R32 Match 8', 'r32','2026-07-01','19:00','Gillette Stadium, Foxborough'],
-  ['R32 Match 9', 'r32','2026-07-02','15:00','Rose Bowl, Los Angeles'],
+  ['R32 Match 1','r32','2026-06-28','15:00','MetLife Stadium, East Rutherford'],
+  ['R32 Match 2','r32','2026-06-28','19:00','SoFi Stadium, Los Angeles'],
+  ['R32 Match 3','r32','2026-06-29','15:00','AT&T Stadium, Arlington'],
+  ['R32 Match 4','r32','2026-06-29','19:00','Mercedes-Benz Stadium, Atlanta'],
+  ['R32 Match 5','r32','2026-06-30','15:00','NRG Stadium, Houston'],
+  ['R32 Match 6','r32','2026-06-30','19:00','Hard Rock Stadium, Miami'],
+  ['R32 Match 7','r32','2026-07-01','15:00','Lumen Field, Seattle'],
+  ['R32 Match 8','r32','2026-07-01','19:00','Gillette Stadium, Foxborough'],
+  ['R32 Match 9','r32','2026-07-02','15:00','Rose Bowl, Los Angeles'],
   ['R32 Match 10','r32','2026-07-02','19:00','Arrowhead Stadium, Kansas City'],
   ['R32 Match 11','r32','2026-07-03','15:00','BMO Field, Toronto'],
   ['R32 Match 12','r32','2026-07-03','19:00','BC Place, Vancouver'],
@@ -212,29 +199,28 @@ const KNOCKOUT_MATCHES = [
   ['FINAL 🏆','final','2026-07-19','15:00','MetLife Stadium, East Rutherford'],
 ];
 
-async function seedMatches() {
-  const n = await Match.countDocuments();
-  if (n > 0) return;
-  const docs = [];
+async function seedMatches(sql) {
   for (const [grp,t1,t2,date,time,venue] of GROUP_MATCHES)
-    docs.push({ _id:uuidv4(), group_name:`Group ${grp}`, stage:'group', team1:t1, team2:t2, match_date:date, match_time:time, venue, score1:null, score2:null, completed:false });
+    await sql`INSERT INTO matches (id,group_name,stage,team1,team2,match_date,match_time,venue)
+              VALUES (${uuidv4()},${`Group ${grp}`},'group',${t1},${t2},${date},${time},${venue})`;
   for (const [label,stage,date,time,venue] of KNOCKOUT_MATCHES)
-    docs.push({ _id:uuidv4(), group_name:label, stage, team1:'TBD', team2:'TBD', match_date:date, match_time:time, venue, score1:null, score2:null, completed:false });
-  await Match.insertMany(docs);
-  console.log(`✅ Seeded ${docs.length} matches`);
+    await sql`INSERT INTO matches (id,group_name,stage,team1,team2,match_date,match_time,venue)
+              VALUES (${uuidv4()},${label},${stage},'TBD','TBD',${date},${time},${venue})`;
+  console.log('✅ Seeded matches');
 }
 
-// ── Auth ─────────────────────────────────────────────────────────────────────
+// ── Auth ──────────────────────────────────────────────────────────────────────
 app.post('/api/login', async (req, res) => {
   try {
     const { username } = req.body;
     if (!username?.trim() || username.trim().length < 2)
       return res.status(400).json({ error: 'Name must be at least 2 characters' });
     const name = username.trim();
-    const existing = await User.findOne({ username: name }).lean();
-    if (existing) return res.json({ token: existing.token, username: existing.username });
+    const sql = getSQL();
+    const rows = await sql`SELECT * FROM users WHERE username = ${name}`;
+    if (rows.length) return res.json({ token: rows[0].token, username: rows[0].username });
     const token = uuidv4();
-    await User.create({ _id: uuidv4(), token, username: name });
+    await sql`INSERT INTO users (id, token, username) VALUES (${uuidv4()}, ${token}, ${name})`;
     res.json({ token, username: name });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -242,43 +228,47 @@ app.post('/api/login', async (req, res) => {
 // ── Matches ───────────────────────────────────────────────────────────────────
 app.get('/api/matches', async (req, res) => {
   try {
-    const matches = await Match.find({}).lean();
-    matches.sort((a,b) => (a.match_date+a.match_time) < (b.match_date+b.match_time) ? -1 : 1);
-    res.json(matches.map(m => ({ ...m, id: m._id })));
-  } catch(e) { res.status(500).json({ error: e.message }); }
+    const sql = getSQL();
+    const rows = await sql`SELECT * FROM matches ORDER BY match_date, match_time`;
+    res.json(rows.map(m => ({ ...m, id: m.id })));
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ── Groups + Standings ────────────────────────────────────────────────────────
 app.get('/api/groups', async (req, res) => {
   try {
-    const completed = await Match.find({ stage:'group', completed:true }).lean();
+    const sql = getSQL();
+    const completed = await sql`SELECT * FROM matches WHERE stage='group' AND completed=true`;
     const standings = {};
     for (const [letter,{teams}] of Object.entries(GROUPS))
       standings[letter] = teams.map(name => ({ name, played:0, won:0, drawn:0, lost:0, gf:0, ga:0, gd:0, points:0 }));
     for (const m of completed) {
       const letter = m.group_name?.replace('Group ','');
       if (!letter || !standings[letter]) continue;
-      const s=standings[letter], t1=s.find(t=>t.name===m.team1), t2=s.find(t=>t.name===m.team2);
-      if (!t1||!t2) continue;
+      const s = standings[letter];
+      const t1 = s.find(t => t.name === m.team1);
+      const t2 = s.find(t => t.name === m.team2);
+      if (!t1 || !t2) continue;
       t1.played++; t2.played++;
-      t1.gf+=m.score1; t1.ga+=m.score2; t2.gf+=m.score2; t2.ga+=m.score1;
-      t1.gd=t1.gf-t1.ga; t2.gd=t2.gf-t2.ga;
-      if (m.score1>m.score2)      { t1.won++;t1.points+=3;t2.lost++; }
-      else if (m.score1<m.score2) { t2.won++;t2.points+=3;t1.lost++; }
-      else                        { t1.drawn++;t1.points++;t2.drawn++;t2.points++; }
+      t1.gf += m.score1; t1.ga += m.score2; t2.gf += m.score2; t2.ga += m.score1;
+      t1.gd = t1.gf - t1.ga; t2.gd = t2.gf - t2.ga;
+      if (m.score1 > m.score2)      { t1.won++; t1.points += 3; t2.lost++; }
+      else if (m.score1 < m.score2) { t2.won++; t2.points += 3; t1.lost++; }
+      else                          { t1.drawn++; t1.points++; t2.drawn++; t2.points++; }
     }
     for (const l of Object.keys(standings))
-      standings[l].sort((a,b) => b.points-a.points || b.gd-a.gd || b.gf-a.gf);
-    res.json({ groups:GROUPS, standings });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+      standings[l].sort((a,b) => b.points - a.points || b.gd - a.gd || b.gf - a.gf);
+    res.json({ groups: GROUPS, standings });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── Prediction stats (distribution) ──────────────────────────────────────────
+// ── Prediction stats ──────────────────────────────────────────────────────────
 app.get('/api/stats', async (req, res) => {
   try {
-    const allPreds = await Prediction.find({}).lean();
+    const sql = getSQL();
+    const rows = await sql`SELECT match_id, score1, score2 FROM predictions`;
     const stats = {};
-    for (const p of allPreds) {
+    for (const p of rows) {
       if (!stats[p.match_id]) stats[p.match_id] = { total:0, team1:0, draw:0, team2:0 };
       const s = stats[p.match_id];
       s.total++;
@@ -288,77 +278,75 @@ app.get('/api/stats', async (req, res) => {
     }
     for (const id of Object.keys(stats)) {
       const s = stats[id];
-      if (s.total > 0) {
-        s.team1pct = Math.round(s.team1/s.total*100);
-        s.drawpct  = Math.round(s.draw /s.total*100);
-        s.team2pct = Math.round(s.team2/s.total*100);
-      } else {
-        s.team1pct = 33; s.drawpct = 34; s.team2pct = 33;
-      }
+      s.team1pct = s.total ? Math.round(s.team1 / s.total * 100) : 33;
+      s.drawpct  = s.total ? Math.round(s.draw  / s.total * 100) : 34;
+      s.team2pct = s.total ? Math.round(s.team2 / s.total * 100) : 33;
     }
     res.json(stats);
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ── Submit prediction ─────────────────────────────────────────────────────────
 app.post('/api/predictions', async (req, res) => {
   try {
     const { token, match_id, score1, score2 } = req.body;
-    const user = await User.findOne({ token }).lean();
-    if (!user) return res.status(401).json({ error: 'Invalid session' });
-    const match = await Match.findOne({ _id: match_id }).lean();
-    if (!match) return res.status(404).json({ error: 'Match not found' });
+    const sql = getSQL();
+    const users = await sql`SELECT * FROM users WHERE token = ${token}`;
+    if (!users.length) return res.status(401).json({ error: 'Invalid session' });
+    const user = users[0];
+    const matches = await sql`SELECT * FROM matches WHERE id = ${match_id}`;
+    if (!matches.length) return res.status(404).json({ error: 'Match not found' });
+    const match = matches[0];
     if (match.completed) return res.status(400).json({ error: 'Match already finished' });
     const kickoff = new Date(`${match.match_date}T${match.match_time}:00`);
     if (new Date() > new Date(kickoff.getTime() - 3600000))
       return res.status(400).json({ error: 'Predictions locked 1h before kickoff' });
     if (score1 == null || score2 == null || score1 < 0 || score2 < 0)
       return res.status(400).json({ error: 'Invalid scores' });
-    const key = `${user._id}_${match._id}`;
-    await Prediction.findOneAndUpdate(
-      { user_match: key },
-      { $set: { score1, score2 }, $setOnInsert: { _id: uuidv4(), user_id: user._id, match_id: match._id, points: 0 } },
-      { upsert: true, new: true }
-    );
+    const key = `${user.id}_${match.id}`;
+    await sql`
+      INSERT INTO predictions (id, user_match, user_id, match_id, score1, score2, points)
+      VALUES (${uuidv4()}, ${key}, ${user.id}, ${match.id}, ${score1}, ${score2}, 0)
+      ON CONFLICT (user_match) DO UPDATE SET score1 = ${score1}, score2 = ${score2}`;
     res.json({ ok: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ── My predictions ────────────────────────────────────────────────────────────
 app.get('/api/predictions', async (req, res) => {
   try {
-    const user = await User.findOne({ token: req.headers.authorization }).lean();
-    if (!user) return res.status(401).json({ error: 'Invalid session' });
-    const preds = await Prediction.find({ user_id: user._id }).lean();
-    const out = [];
-    for (const p of preds) {
-      const m = await Match.findOne({ _id: p.match_id }).lean();
-      if (!m) continue;
-      out.push({ ...p, id:p._id, team1:m.team1, team2:m.team2,
-        match_date:m.match_date, match_time:m.match_time,
-        result1:m.score1, result2:m.score2, completed:m.completed,
-        stage:m.stage, group_name:m.group_name, venue:m.venue });
-    }
-    out.sort((a,b) => (a.match_date+a.match_time) < (b.match_date+b.match_time) ? -1 : 1);
-    res.json(out);
-  } catch(e) { res.status(500).json({ error: e.message }); }
+    const sql = getSQL();
+    const users = await sql`SELECT * FROM users WHERE token = ${req.headers.authorization}`;
+    if (!users.length) return res.status(401).json({ error: 'Invalid session' });
+    const user = users[0];
+    const rows = await sql`
+      SELECT p.*, m.team1, m.team2, m.match_date, m.match_time,
+             m.score1 AS result1, m.score2 AS result2,
+             m.completed, m.stage, m.group_name, m.venue
+      FROM predictions p
+      JOIN matches m ON m.id = p.match_id
+      WHERE p.user_id = ${user.id}
+      ORDER BY m.match_date, m.match_time`;
+    res.json(rows.map(r => ({ ...r, id: r.id })));
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ── Leaderboard ───────────────────────────────────────────────────────────────
 app.get('/api/leaderboard', async (req, res) => {
   try {
-    const users = await User.find({}).lean();
-    const board = [];
-    for (const u of users) {
-      const preds = await Prediction.find({ user_id: u._id }).lean();
-      const total   = preds.reduce((s,p) => s+(p.points||0), 0);
-      const exact   = preds.filter(p => p.points===3).length;
-      const correct = preds.filter(p => p.points===1).length;
-      board.push({ id:u._id, username:u.username, total, exact, correct, predictions:preds.length });
-    }
-    board.sort((a,b) => b.total-a.total || b.exact-a.exact || b.predictions-a.predictions);
-    res.json(board);
-  } catch(e) { res.status(500).json({ error: e.message }); }
+    const sql = getSQL();
+    const rows = await sql`
+      SELECT u.id, u.username,
+             COALESCE(SUM(p.points), 0)::int                          AS total,
+             COUNT(CASE WHEN p.points = 3 THEN 1 END)::int            AS exact,
+             COUNT(CASE WHEN p.points = 1 THEN 1 END)::int            AS correct,
+             COUNT(p.id)::int                                          AS predictions
+      FROM users u
+      LEFT JOIN predictions p ON p.user_id = u.id
+      GROUP BY u.id, u.username
+      ORDER BY total DESC, exact DESC, predictions DESC`;
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ── Enter result (admin) ──────────────────────────────────────────────────────
@@ -366,18 +354,19 @@ app.post('/api/results', async (req, res) => {
   try {
     const { admin_key, match_id, score1, score2 } = req.body;
     if (admin_key !== ADMIN_KEY) return res.status(403).json({ error: 'Wrong admin key' });
-    const match = await Match.findOne({ _id: match_id }).lean();
-    if (!match) return res.status(404).json({ error: 'Match not found' });
-    await Match.updateOne({ _id: match_id }, { $set: { score1, score2, completed: true } });
-    const preds = await Prediction.find({ match_id }).lean();
+    const sql = getSQL();
+    const matches = await sql`SELECT * FROM matches WHERE id = ${match_id}`;
+    if (!matches.length) return res.status(404).json({ error: 'Match not found' });
+    await sql`UPDATE matches SET score1=${score1}, score2=${score2}, completed=true WHERE id=${match_id}`;
+    const preds = await sql`SELECT * FROM predictions WHERE match_id = ${match_id}`;
     for (const p of preds) {
       let pts = 0;
-      if (p.score1===score1 && p.score2===score2) pts = 3;
-      else if (Math.sign(score1-score2) === Math.sign(p.score1-p.score2)) pts = 1;
-      await Prediction.updateOne({ _id: p._id }, { $set: { points: pts } });
+      if (p.score1 === score1 && p.score2 === score2) pts = 3;
+      else if (Math.sign(score1 - score2) === Math.sign(p.score1 - p.score2)) pts = 1;
+      await sql`UPDATE predictions SET points = ${pts} WHERE id = ${p.id}`;
     }
     res.json({ ok: true, updated: preds.length });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/admin-check', (req, res) => {
@@ -386,12 +375,9 @@ app.get('/api/admin-check', (req, res) => {
 
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
-// ── Local dev server (not used by Vercel) ─────────────────────────────────────
-if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+if (!process.env.VERCEL) {
   app.listen(PORT, () => {
-    console.log(`\n⚽  World Cup 2026 Predictions`);
-    console.log(`   → http://localhost:${PORT}`);
-    console.log(`   → Admin key: ${ADMIN_KEY}\n`);
+    console.log(`\n⚽  WC2026 → http://localhost:${PORT}\n`);
   });
 }
 
